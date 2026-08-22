@@ -1,0 +1,41 @@
+name: SUPERME AI BUILD MODE
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_type:
+        description: Project type (web, android, zip)
+        required: true
+        default: web
+      artifact_name:
+        description: Artifact name
+        required: true
+        default: superme-build
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout generated project
+        uses: actions/checkout@v4
+
+      - name: Build Web project
+        if: inputs.project_type == 'web'
+        run: |
+          mkdir -p dist
+          if [ -d web ]; then cp -r web/. dist/; else cp -r . dist/; fi
+
+      - name: Package project
+        run: |
+          mkdir -p output
+          if [ -d dist ]; then cd dist && zip -r "../output/${{ inputs.artifact_name }}.zip" .; else zip -r "output/${{ inputs.artifact_name }}.zip" . -x '.git/*'; fi
+
+      - name: Upload downloadable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: output/*
+          if-no-files-found: error
