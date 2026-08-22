@@ -1,0 +1,61 @@
+name: SUPERME AI - Build Project
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Build target
+        required: true
+        default: web
+        type: choice
+        options: [web, android, zip]
+      artifact_name:
+        description: Artifact name
+        required: true
+        default: superme-build
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        if: inputs.target == 'web'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build web
+        if: inputs.target == 'web'
+        run: |
+          mkdir -p output
+          if [ -f web/package.json ]; then cd web && npm install && npm run build && cp -r dist ../output/web; else cp -r web output/web; fi
+
+      - name: Package source
+        if: inputs.target == 'zip'
+        run: |
+          mkdir -p output
+          zip -r "output/${{ inputs.artifact_name }}.zip" . -x '.git/*' '.github/*'
+
+      - name: Prepare Android artifact
+        if: inputs.target == 'android'
+        run: |
+          mkdir -p output
+          if [ -f gradlew ]; then chmod +x gradlew && ./gradlew assembleDebug; find . -type f -name '*.apk' -exec cp {} output/ \;; else echo 'Android project/runner is not configured yet.' > output/ANDROID_BUILD_REQUIRED.txt; fi
+
+      - name: Package web output
+        if: inputs.target == 'web'
+        run: cd output && zip -r "../${{ inputs.artifact_name }}.zip" web
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: |
+            output/*
+            ${{ inputs.artifact_name }}.zip
+          if-no-files-found: error
