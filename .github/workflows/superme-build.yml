@@ -1,44 +1,102 @@
-name: CHATGPT ULTRA - Web/Source Build
+name: SUPERME AI - Android APK Build
 
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: Build target
-        required: true
-        default: web
-        type: choice
-        options: [web, zip]
       artifact_name:
-        description: Artifact name
+        description: APK artifact name
         required: true
-        default: chatgpt-ultra-web
+        default: SUPERME-AI-Android
+      build_type:
+        description: Android build type
+        required: true
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
 
 permissions:
   contents: read
 
+env:
+  GODOT_VERSION: '4.4.1'
+
 jobs:
-  build:
+  android-apk:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Prepare output
-        run: mkdir -p output
-      - name: Build web package
-        if: inputs.target == 'web'
+
+      - name: Verify Godot project
+        shell: bash
         run: |
-          cp -r web output/web
-          cd output
-          zip -r "../${{ inputs.artifact_name }}.zip" web
-      - name: Package source
-        if: inputs.target == 'zip'
+          set -e
+          test -f project.godot || { echo 'ERROR: project.godot not found'; exit 1; }
+          echo 'Godot project found.'
+
+      - name: Install Godot
+        shell: bash
         run: |
-          zip -r "output/${{ inputs.artifact_name }}.zip" . -x '.git/*' '.github/*' 'output/*'
-      - name: Upload web/source artifact
+          set -e
+          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo mv /tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
+          sudo chmod +x /usr/local/bin/godot
+          godot --version
+
+      - name: Install Android SDK and build tools
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android packages
+        shell: bash
+        run: |
+          sdkmanager --install \
+            'platform-tools' \
+            'platforms;android-34' \
+            'build-tools;34.0.0'
+          yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Configure Godot Android export
+        shell: bash
+        run: |
+          set -e
+          mkdir -p "$HOME/.config/godot"
+          godot --headless --editor --path . --quit || true
+          godot --headless --path . --editor --quit
+
+      - name: Check Android export preset
+        shell: bash
+        run: |
+          set -e
+          if ! grep -q '^\[preset\.0\]' export_presets.cfg; then
+            echo 'ERROR: Android export preset is missing from export_presets.cfg'
+            exit 1
+          fi
+          if ! grep -q 'platform="Android"' export_presets.cfg; then
+            echo 'ERROR: preset.0 is not configured for Android'
+            exit 1
+          fi
+
+      - name: Export Android APK
+        shell: bash
+        run: |
+          set -e
+          mkdir -p build/android
+          if [ "${{ inputs.build_type }}" = 'release' ]; then
+            godot --headless --path . --export-release 'Android' "build/android/${{ inputs.artifact_name }}.apk"
+          else
+            godot --headless --path . --export-debug 'Android' "build/android/${{ inputs.artifact_name }}.apk"
+          fi
+          test -s "build/android/${{ inputs.artifact_name }}.apk"
+          file "build/android/${{ inputs.artifact_name }}.apk"
+          ls -lh build/android/
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact_name }}
-          path: output/
+          path: build/android/${{ inputs.artifact_name }}.apk
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
