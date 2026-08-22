@@ -1,8 +1,6 @@
-name: CHATGPT ULTRA - Build and Artifact
+name: CHATGPT ULTRA - Web/Source Build
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       target:
@@ -10,17 +8,14 @@ on:
         required: true
         default: web
         type: choice
-        options: [web, android, zip]
+        options: [web, zip]
       artifact_name:
         description: Artifact name
         required: true
-        default: chatgpt-ultra-build
+        default: chatgpt-ultra-web
 
 permissions:
   contents: read
-
-env:
-  BUILD_ARTIFACT: ${{ inputs.artifact_name || 'chatgpt-ultra-build' }}
 
 jobs:
   build:
@@ -28,77 +23,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Select target
-        id: target
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "target=${{ inputs.target }}" >> "$GITHUB_OUTPUT"
-            echo "artifact=${{ inputs.artifact_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "target=web" >> "$GITHUB_OUTPUT"
-            echo "artifact=chatgpt-ultra-build" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Prepare artifact directory
+      - name: Prepare output
         run: mkdir -p output
-
-      - name: Build Web
-        if: steps.target.outputs.target == 'web'
+      - name: Build web package
+        if: inputs.target == 'web'
         run: |
-          if [ -f web/package.json ]; then
-            cd web
-            npm install
-            npm run build
-            cp -r dist ../output/web
-          else
-            cp -r web output/web
-          fi
+          cp -r web output/web
           cd output
-          zip -r "../${{ steps.target.outputs.artifact }}.zip" web
-
-      - name: Package Source ZIP
-        if: steps.target.outputs.target == 'zip'
+          zip -r "../${{ inputs.artifact_name }}.zip" web
+      - name: Package source
+        if: inputs.target == 'zip'
         run: |
-          zip -r "output/${{ steps.target.outputs.artifact }}.zip" . \
-            -x '.git/*' '.github/*' 'output/*'
-
-      - name: Build Android APK
-        if: steps.target.outputs.target == 'android'
-        run: |
-          if [ -f gradlew ]; then
-            chmod +x gradlew
-            ./gradlew assembleDebug
-            find . -type f -name '*.apk' -exec cp {} output/ \;
-          else
-            echo 'No Gradle Android project found.'
-            exit 1
-          fi
-
-      - name: Verify artifact files
-        run: |
-          echo '=== ARTIFACT FILES ==='
-          find output -type f -maxdepth 3 -print
-          test -n "$(find output -type f -print -quit)"
-
-      - name: Upload artifact
+          zip -r "output/${{ inputs.artifact_name }}.zip" . -x '.git/*' '.github/*' 'output/*'
+      - name: Upload web/source artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.target.outputs.artifact }}
+          name: ${{ inputs.artifact_name }}
           path: output/
           if-no-files-found: error
           retention-days: 7
-          compression-level: 6
-
-      - name: Build summary
-        run: |
-          {
-            echo '## 📦 CHATGPT ULTRA Build';
-            echo '';
-            echo "**Target:** ${{ steps.target.outputs.target }}";
-            echo "**Artifact:** ${{ steps.target.outputs.artifact }}";
-            echo '';
-            echo '### Files';
-            find output -type f -printf '%p\n';
-          } >> "$GITHUB_STEP_SUMMARY"
