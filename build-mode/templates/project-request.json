@@ -1,0 +1,8 @@
+{
+  "prompt": "",
+  "target": "web",
+  "artifact_name": "superme-build",
+  "original_content_only": true,
+  "auto_test": true,
+  "auto_repair": true
+}
