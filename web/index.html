@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SUPERME AI</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">✦ SUPERME</div>
+    <button class="new-chat" onclick="newChat()">＋ Yangi chat</button>
+    <div id="chatList" class="chat-list"></div>
+    <div class="side-bottom">⚙️ Sozlamalar</div>
+  </aside>
+  <main class="main">
+    <header><strong>SUPERME AI</strong><span>AI assistant</span></header>
+    <section id="messages" class="messages">
+      <div class="welcome"><h1>Qanday yordam beray?</h1><p>Rasm, video, fayl yuboring yoki savolingizni yozing.</p></div>
+    </section>
+    <div id="attachments" class="attachments"></div>
+    <form class="composer" onsubmit="sendMessage(event)">
+      <label class="attach" title="Rasm, video yoki fayl">📎<input id="files" type="file" multiple accept="image/*,video/*,.pdf,.txt,.doc,.docx,.zip,.json,.js,.py,.gd,.html,.css" onchange="showFiles()"></label>
+      <textarea id="prompt" rows="1" placeholder="SUPERME AI ga xabar yozing..." onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(event)}"></textarea>
+      <button class="send" type="submit">↑</button>
+    </form>
+    <p class="note">Ko‘p fayl yuklash qo‘llab-quvvatlanadi. Haqiqiy hajm limiti server/storage va AI provayderiga bog‘liq.</p>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
