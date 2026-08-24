@@ -19,3 +19,6 @@ jobs:
           cache-dependency-path: backend/package.json
       - run: npm install
       - run: node --check server.js
+      - run: node --check agent.js
+      - name: Smoke import
+        run: node -e "import('./agent.js').then(()=>console.log('agent import OK'))"
