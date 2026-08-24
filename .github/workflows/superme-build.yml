@@ -83,18 +83,23 @@ jobs:
           sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
           yes | sdkmanager --licenses >/dev/null || true
 
+      - name: Set up Gradle
+        if: inputs.target == 'android'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
       - name: Build Android APK
         if: inputs.target == 'android'
         working-directory: android
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x gradlew
           if [ "${{ inputs.build_type }}" = 'release' ]; then
-            ./gradlew :app:assembleRelease --no-daemon
+            gradle :app:assembleRelease --no-daemon
             cp app/build/outputs/apk/release/app-release.apk "../build-${{ inputs.artifact_name }}.apk"
           else
-            ./gradlew :app:assembleDebug --no-daemon
+            gradle :app:assembleDebug --no-daemon
             cp app/build/outputs/apk/debug/app-debug.apk "../build-${{ inputs.artifact_name }}.apk"
           fi
 
