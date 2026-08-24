@@ -1,15 +1,24 @@
-name: SUPERME AI - Android APK Build
+name: SUPERME AI - Build
 
 on:
   workflow_dispatch:
     inputs:
-      artifact_name:
-        description: APK artifact name
+      target:
+        description: Build target
         required: true
-        default: SUPERME-AI-Android
+        default: web
+        type: choice
+        options:
+          - web
+          - zip
+          - android
+      artifact_name:
+        description: Artifact name
+        required: true
+        default: SUPERME-AI-Build
       build_type:
         description: Android build type
-        required: true
+        required: false
         default: debug
         type: choice
         options:
@@ -23,20 +32,46 @@ env:
   GODOT_VERSION: '4.4.1'
 
 jobs:
-  android-apk:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Verify Godot project
+      - name: Build web
+        if: inputs.target == 'web'
         shell: bash
         run: |
           set -e
-          test -f project.godot || { echo 'ERROR: project.godot not found'; exit 1; }
-          echo 'Godot project found.'
+          test -f web/index.html
+          test -f web/app.js
+          test -f web/style.css
+          mkdir -p build/web
+          cp -R web/. build/web/
+          echo 'SUPERME AI web build ready.'
+
+      - name: Build source ZIP
+        if: inputs.target == 'zip'
+        shell: bash
+        run: |
+          set -e
+          mkdir -p build
+          zip -r "build/${{ inputs.artifact_name }}.zip" . \
+            -x '.git/*' 'build/*' 'node_modules/*' '.env' '*.log'
+          test -s "build/${{ inputs.artifact_name }}.zip"
+
+      - name: Verify Godot project
+        if: inputs.target == 'android'
+        shell: bash
+        run: |
+          set -e
+          test -f project.godot
+          test -f export_presets.cfg
+          grep -q '^\[preset\.0\]' export_presets.cfg
+          grep -q 'platform="Android"' export_presets.cfg
 
       - name: Install Godot
+        if: inputs.target == 'android'
         shell: bash
         run: |
           set -e
@@ -46,40 +81,19 @@ jobs:
           sudo chmod +x /usr/local/bin/godot
           godot --version
 
-      - name: Install Android SDK and build tools
+      - name: Install Android SDK
+        if: inputs.target == 'android'
         uses: android-actions/setup-android@v3
 
       - name: Install Android packages
+        if: inputs.target == 'android'
         shell: bash
         run: |
-          sdkmanager --install \
-            'platform-tools' \
-            'platforms;android-34' \
-            'build-tools;34.0.0'
+          sdkmanager --install 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0'
           yes | sdkmanager --licenses >/dev/null || true
 
-      - name: Configure Godot Android export
-        shell: bash
-        run: |
-          set -e
-          mkdir -p "$HOME/.config/godot"
-          godot --headless --editor --path . --quit || true
-          godot --headless --path . --editor --quit
-
-      - name: Check Android export preset
-        shell: bash
-        run: |
-          set -e
-          if ! grep -q '^\[preset\.0\]' export_presets.cfg; then
-            echo 'ERROR: Android export preset is missing from export_presets.cfg'
-            exit 1
-          fi
-          if ! grep -q 'platform="Android"' export_presets.cfg; then
-            echo 'ERROR: preset.0 is not configured for Android'
-            exit 1
-          fi
-
       - name: Export Android APK
+        if: inputs.target == 'android'
         shell: bash
         run: |
           set -e
@@ -90,10 +104,27 @@ jobs:
             godot --headless --path . --export-debug 'Android' "build/android/${{ inputs.artifact_name }}.apk"
           fi
           test -s "build/android/${{ inputs.artifact_name }}.apk"
-          file "build/android/${{ inputs.artifact_name }}.apk"
-          ls -lh build/android/
+
+      - name: Upload web artifact
+        if: inputs.target == 'web'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: build/web
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload ZIP artifact
+        if: inputs.target == 'zip'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: build/${{ inputs.artifact_name }}.zip
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload APK artifact
+        if: inputs.target == 'android'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact_name }}
