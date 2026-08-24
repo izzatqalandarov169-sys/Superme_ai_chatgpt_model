@@ -28,9 +28,6 @@ on:
 permissions:
   contents: read
 
-env:
-  GODOT_VERSION: '4.4.1'
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -42,67 +39,72 @@ jobs:
         if: inputs.target == 'web'
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           test -f web/index.html
           test -f web/app.js
           test -f web/style.css
           mkdir -p build/web
           cp -R web/. build/web/
-          echo 'SUPERME AI web build ready.'
 
       - name: Build source ZIP
         if: inputs.target == 'zip'
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p build
           zip -r "build/${{ inputs.artifact_name }}.zip" . \
-            -x '.git/*' 'build/*' 'node_modules/*' '.env' '*.log'
+            -x '.git/*' 'build/*' 'node_modules/*' 'backend/data/*' 'backend/workspace/*' '.env' '*.log'
           test -s "build/${{ inputs.artifact_name }}.zip"
 
-      - name: Verify Godot project
+      - name: Validate Android project
         if: inputs.target == 'android'
         shell: bash
         run: |
-          set -e
-          test -f project.godot
-          test -f export_presets.cfg
-          grep -q '^\[preset\.0\]' export_presets.cfg
-          grep -q 'platform="Android"' export_presets.cfg
+          set -euo pipefail
+          test -f android/settings.gradle
+          test -f android/build.gradle
+          test -f android/app/build.gradle
 
-      - name: Install Godot
+      - name: Set up JDK
         if: inputs.target == 'android'
-        shell: bash
-        run: |
-          set -e
-          wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -O /tmp/godot.zip
-          unzip -q /tmp/godot.zip -d /tmp/godot
-          sudo mv /tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
-          sudo chmod +x /usr/local/bin/godot
-          godot --version
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-      - name: Install Android SDK
+      - name: Set up Android SDK
         if: inputs.target == 'android'
         uses: android-actions/setup-android@v3
 
-      - name: Install Android packages
+      - name: Install Android SDK packages
         if: inputs.target == 'android'
         shell: bash
         run: |
-          sdkmanager --install 'platform-tools' 'platforms;android-34' 'build-tools;34.0.0'
+          sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
           yes | sdkmanager --licenses >/dev/null || true
 
-      - name: Export Android APK
+      - name: Build Android APK
+        if: inputs.target == 'android'
+        working-directory: android
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          if [ "${{ inputs.build_type }}" = 'release' ]; then
+            ./gradlew :app:assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk "../build-${{ inputs.artifact_name }}.apk"
+          else
+            ./gradlew :app:assembleDebug --no-daemon
+            cp app/build/outputs/apk/debug/app-debug.apk "../build-${{ inputs.artifact_name }}.apk"
+          fi
+
+      - name: Move Android artifact
         if: inputs.target == 'android'
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           mkdir -p build/android
-          if [ "${{ inputs.build_type }}" = 'release' ]; then
-            godot --headless --path . --export-release 'Android' "build/android/${{ inputs.artifact_name }}.apk"
-          else
-            godot --headless --path . --export-debug 'Android' "build/android/${{ inputs.artifact_name }}.apk"
-          fi
+          mv "build-${{ inputs.artifact_name }}.apk" "build/android/${{ inputs.artifact_name }}.apk"
           test -s "build/android/${{ inputs.artifact_name }}.apk"
 
       - name: Upload web artifact
