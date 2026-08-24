@@ -1,0 +1,17 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+const exec=promisify(execFile);
+export const WORKSPACE=path.resolve(process.env.WORKSPACE_DIR||'./workspace');
+export function safePath(p){const t=path.resolve(WORKSPACE,String(p||''));if(t!==WORKSPACE&&!t.startsWith(WORKSPACE+path.sep))throw new Error('Invalid workspace path');return t;}
+export async function webSearch(query){const r=await fetch('https://html.duckduckgo.com/html/?q='+encodeURIComponent(query),{headers:{'User-Agent':'SUPERME-AI'}});const html=await r.text();const out=[];const re=/<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/g;let m;while((m=re.exec(html))&&out.length<8)out.push({title:m[2].replace(/<[^>]+>/g,'').replace(/&amp;/g,'&'),url:m[1]});return out;}
+export async function executeSandbox(language,code){const dir=path.join(WORKSPACE,'.sandbox');await fs.mkdir(dir,{recursive:true});const id=crypto.randomUUID();let file,cmd,args;if(language==='python'){file=path.join(dir,id+'.py');cmd='python3';args=[file]}else if(language==='javascript'){file=path.join(dir,id+'.mjs');cmd=process.execPath;args=[file]}else throw new Error('Supported languages: python, javascript');await fs.writeFile(file,code);try{return await exec(cmd,args,{cwd:WORKSPACE,timeout:10000,maxBuffer:1024*1024})}finally{await fs.rm(file,{force:true});}}
+export const tools=[
+{type:'function',name:'web_search',description:'Search the live web.',parameters:{type:'object',properties:{query:{type:'string'}},required:['query'],additionalProperties:false},strict:true},
+{type:'function',name:'execute_code',description:'Run Python or JavaScript in the project sandbox.',parameters:{type:'object',properties:{language:{type:'string',enum:['python','javascript']},code:{type:'string'}},required:['language','code'],additionalProperties:false},strict:true},
+{type:'function',name:'read_workspace_file',description:'Read a project file.',parameters:{type:'object',properties:{path:{type:'string'}},required:['path'],additionalProperties:false},strict:true},
+{type:'function',name:'write_workspace_file',description:'Create or replace a project file.',parameters:{type:'object',properties:{path:{type:'string'},content:{type:'string'}},required:['path','content'],additionalProperties:false},strict:true}
+];
+export async function runAgent(client,model,instructions,input){let r=await client.responses.create({model,instructions,input,tools});for(let n=0;n<6;n++){const calls=(r.output||[]).filter(x=>x.type==='function_call');if(!calls.length)return r;const outs=[];for(const c of calls){try{const a=JSON.parse(c.arguments||'{}');let v;if(c.name==='web_search')v=await webSearch(a.query);else if(c.name==='execute_code')v=await executeSandbox(a.language,a.code);else if(c.name==='read_workspace_file')v=await fs.readFile(safePath(a.path),'utf8');else if(c.name==='write_workspace_file'){const f=safePath(a.path);await fs.mkdir(path.dirname(f),{recursive:true});await fs.writeFile(f,a.content);v={ok:true,path:a.path};}outs.push({type:'function_call_output',call_id:c.call_id,output:JSON.stringify(v)});}catch(e){outs.push({type:'function_call_output',call_id:c.call_id,output:JSON.stringify({error:e.message})});}}r=await client.responses.create({model,instructions,input:[...r.output,...outs],tools});}return r;}
