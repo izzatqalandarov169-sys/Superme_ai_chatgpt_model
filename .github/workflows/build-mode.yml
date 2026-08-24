@@ -7,10 +7,19 @@ on:
         description: Project type (web, android, zip)
         required: true
         default: web
+        type: choice
+        options:
+          - web
+          - android
+          - zip
       artifact_name:
         description: Artifact name
         required: true
         default: superme-build
+      backend_url:
+        description: Public HTTPS backend URL for Android builds
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -19,19 +28,83 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout generated project
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Build Web project
         if: inputs.project_type == 'web'
         run: |
+          set -euo pipefail
           mkdir -p dist
-          if [ -d web ]; then cp -r web/. dist/; else cp -r . dist/; fi
+          cp -R web/. dist/
 
-      - name: Package project
+      - name: Prepare Android project
+        if: inputs.project_type == 'android'
         run: |
+          set -euo pipefail
+          test -f android/settings.gradle
+          test -f android/app/build.gradle
+          test -f web/index.html
+          test -n "${{ inputs.backend_url }}"
+          case "${{ inputs.backend_url }}" in https://*) ;; *) echo 'backend_url must start with https://'; exit 1;; esac
+          rm -rf android/app/src/main/assets
+          mkdir -p android/app/src/main/assets
+          cp -R web/. android/app/src/main/assets/
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/assets/app.js')
+          s=p.read_text().replace("const API=window.SUPERME_API_URL||'http://localhost:3000';", "const API=window.SUPERME_API_URL||new URLSearchParams(location.search).get('api')||'http://localhost:3000';")
+          p.write_text(s)
+          p=Path('android/app/src/main/java/com/superme/chatgptultra/MainActivity.java')
+          p.write_text(p.read_text().replace('https://YOUR-BACKEND.example.com', '${{ inputs.backend_url }}'))
+          PY
+
+      - name: Set up JDK
+        if: inputs.project_type == 'android'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        if: inputs.project_type == 'android'
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        if: inputs.project_type == 'android'
+        run: |
+          sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+          yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Set up Gradle
+        if: inputs.project_type == 'android'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build Android APK
+        if: inputs.project_type == 'android'
+        working-directory: android
+        run: |
+          set -euo pipefail
+          gradle :app:assembleDebug --no-daemon
+          mkdir -p ../output
+          cp app/build/outputs/apk/debug/app-debug.apk "../output/${{ inputs.artifact_name }}.apk"
+
+      - name: Package ZIP
+        if: inputs.project_type == 'zip'
+        run: |
+          set -euo pipefail
           mkdir -p output
-          if [ -d dist ]; then cd dist && zip -r "../output/${{ inputs.artifact_name }}.zip" .; else zip -r "output/${{ inputs.artifact_name }}.zip" . -x '.git/*'; fi
+          zip -r "output/${{ inputs.artifact_name }}.zip" . -x '.git/*' 'output/*' 'node_modules/*' 'backend/data/*' 'backend/workspace/*' '.env'
+
+      - name: Package web
+        if: inputs.project_type == 'web'
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          cd dist
+          zip -r "../output/${{ inputs.artifact_name }}.zip" .
 
       - name: Upload downloadable artifact
         uses: actions/upload-artifact@v4
