@@ -24,6 +24,10 @@ on:
         options:
           - debug
           - release
+      backend_url:
+        description: Public HTTPS URL of the SUPERME AI backend (Android only)
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -64,6 +68,11 @@ jobs:
           test -f android/settings.gradle
           test -f android/build.gradle
           test -f android/app/build.gradle
+          test -f web/index.html
+          test -f web/app.js
+          test -f web/style.css
+          if [ -z "${{ inputs.backend_url }}" ]; then echo 'backend_url is required for Android builds'; exit 1; fi
+          case "${{ inputs.backend_url }}" in https://*) ;; *) echo 'backend_url must start with https://'; exit 1;; esac
 
       - name: Set up JDK
         if: inputs.target == 'android'
@@ -88,6 +97,22 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+
+      - name: Prepare Android web assets
+        if: inputs.target == 'android'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf android/app/src/main/assets
+          mkdir -p android/app/src/main/assets
+          cp -R web/. android/app/src/main/assets/
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('android/app/src/main/assets/app.js')
+          s=p.read_text()
+          s=s.replace("const API=window.SUPERME_API_URL||'http://localhost:3000';", "const API=window.SUPERME_API_URL||new URLSearchParams(location.search).get('api')||'http://localhost:3000';")
+          p.write_text(s)
+          PY
 
       - name: Build Android APK
         if: inputs.target == 'android'
