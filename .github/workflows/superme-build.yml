@@ -112,6 +112,9 @@ jobs:
           s=p.read_text()
           s=s.replace("const API=window.SUPERME_API_URL||'http://localhost:3000';", "const API=window.SUPERME_API_URL||new URLSearchParams(location.search).get('api')||'http://localhost:3000';")
           p.write_text(s)
+          p=Path('android/app/src/main/java/com/superme/chatgptultra/MainActivity.java')
+          s=p.read_text().replace('https://YOUR-BACKEND.example.com', '${{ inputs.backend_url }}')
+          p.write_text(s)
           PY
 
       - name: Build Android APK
