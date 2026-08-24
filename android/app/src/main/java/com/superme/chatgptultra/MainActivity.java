@@ -12,7 +12,7 @@ public class MainActivity extends Activity {
     web.setWebViewClient(new WebViewClient());
     web.getSettings().setJavaScriptEnabled(true);
     web.getSettings().setDomStorageEnabled(true);
-    web.loadUrl("https://izzatqalandarov169-sys.github.io/Superme_ai_chatgpt_model/");
+    web.loadUrl("file:///android_asset/index.html");
     setContentView(web);
   }
 }
